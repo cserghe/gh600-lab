@@ -1,0 +1,28 @@
+# File path is fixed: .github/workflows/copilot-setup-steps.yml
+name: "Copilot Setup Steps"            # display name in the Actions tab; any text
+
+on:                                    # triggers; these only let YOU test the file by hand or on edit
+  workflow_dispatch:                   #   adds a "Run workflow" button in the Actions tab
+  push:
+    paths: [.github/workflows/copilot-setup-steps.yml]   # re-test automatically when this file changes
+  pull_request:
+    paths: [.github/workflows/copilot-setup-steps.yml]
+
+jobs:
+  copilot-setup-steps:                 # MUST be exactly this job name, or Copilot ignores the file
+    runs-on: ubuntu-latest             # runner type (Ubuntu x64 or Windows 64-bit; larger runners allowed)
+    timeout-minutes: 30                # setup must finish in time; maximum allowed is 59
+    permissions:
+      contents: read                   # token for these steps can only read the repo: least privilege
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4      # "uses" = run a published action; this one clones the repo
+      - name: Set up Node
+        uses: actions/setup-node@v4    # installs Node
+        with:                          # "with" = inputs for the action above
+          node-version: "22"
+          cache: npm                   # caches downloaded packages between runs (faster)
+      - name: Install dependencies
+        run: npm ci                    # "run" = shell command; npm ci = clean, exact install from the lockfile
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium   # anything the agent's tests will need
