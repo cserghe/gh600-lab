@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "./scripts/check-tool.sh",
+        "timeoutSec": 15
+      }
+    ],
+    "postToolUseFailure": [
+      { "type": "command", "bash": "./scripts/log-failure.sh" }
+    ]
+  }
+}
