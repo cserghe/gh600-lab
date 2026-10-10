@@ -1,0 +1,35 @@
+name: Agent eval
+on: workflow_dispatch                        # run on demand, e.g. after changing instructions
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false                       # one bad run must not cancel the others
+      matrix:
+        attempt: [1, 2, 3, 4, 5]             # same dataset 5 times: measures variance, not luck
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4          # FIX vs workbook: Copilot CLI needs Node 22+
+        with:
+          node-version: "22"
+      - run: npm install -g @github/copilot
+      - env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_PAT }}
+        run: node eval/run.js > results-${{ matrix.attempt }}.json   # calls copilot -p per case, saves answers
+      - uses: actions/upload-artifact@v4
+        with:
+          name: results-${{ matrix.attempt }}   # unique name per matrix leg (names must not collide)
+          path: results-${{ matrix.attempt }}.json
+
+  score:
+    needs: run                               # waits for all 5 attempts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: results-*                 # download all 5 artefacts
+          merge-multiple: true
+      - run: node eval/score.js >> "$GITHUB_STEP_SUMMARY"   # pass rate per case and per tag, shown on the run page
