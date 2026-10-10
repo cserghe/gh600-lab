@@ -1,0 +1,57 @@
+name: Multi-agent review
+on:
+  pull_request:                                   # every PR
+permissions:
+  contents: read
+concurrency:
+  group: review-${{ github.head_ref || github.run_id }}   # one group per PR branch
+  cancel-in-progress: true                        # new push cancels the stale review of the old commit
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20                           # a stalled agent ends here instead of hanging
+    strategy:
+      fail-fast: false                            # one agent failing doesn't cancel the others
+      matrix:
+        agent: [reviewer, security-auditor]       # parallel fan-out: one job per agent (isolated VMs)
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0                          # FIX vs workbook: full history, so the base branch exists for git diff
+      - uses: actions/setup-node@v4               # FIX vs workbook: Copilot CLI needs Node 22+
+        with:
+          node-version: "22"
+      - run: npm install -g @github/copilot
+      - name: Save the PR diff for the read-only agents
+        run: git diff "origin/${{ github.base_ref }}...HEAD" > pr.diff   # FIX: agents have no shell tool, so the workflow runs git
+      - name: Run ${{ matrix.agent }}
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_PAT }}
+        run: |
+          mkdir -p reports
+          copilot --agent ${{ matrix.agent }} -p "Review the changes in pr.diff (this PR against ${{ github.base_ref }})." \
+            --allow-tool 'read' --deny-tool 'shell(git push)' \
+            --no-ask-user -s > "reports/${{ matrix.agent }}.md"
+        # each agent's reply goes ONLY to its own report file: disjoint file ownership
+        # (FIX vs workbook: the workflow writes the file, because read-only agents cannot)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: report-${{ matrix.agent }}        # one artefact per agent: audit trail
+          path: reports/${{ matrix.agent }}.md
+          if-no-files-found: error                # no report = this agent failed, say so loudly
+
+  consolidate:
+    needs: review                                 # sequential: runs only after every matrix job
+    if: always()                                  # run even if one reviewer failed, to report partial results
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: report-*
+          merge-multiple: true
+          path: reports
+      - name: Handoff contract check
+        run: ./scripts/check-report.sh reports/*.md   # catches "finished but partial" output
+      - run: cat reports/*.md >> "$GITHUB_STEP_SUMMARY"   # human-readable summary on the run page
