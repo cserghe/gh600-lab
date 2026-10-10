@@ -1,0 +1,13 @@
+# dependencies and build output
+node_modules/
+dist/
+
+# runtime output from labs (hooks, eval, review, nightly agent)
+logs/
+results-*.json
+reports/
+pr.diff
+agent-report.md
+
+# the source workbook stays local (never commit it)
+GH600_Lab_Workbook.md
