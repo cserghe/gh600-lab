@@ -1,0 +1,18 @@
+name: Deploy
+on:
+  push:
+    branches: [main]                      # only merged code deploys
+permissions:
+  contents: read
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    environment: staging                  # no reviewers on staging: reversible, auto-deploys
+    steps:
+      - run: echo "deploy to staging"
+  production:
+    needs: staging                        # only after staging succeeded
+    runs-on: ubuntu-latest
+    environment: production               # job PAUSES here until a required reviewer approves
+    steps:
+      - run: echo "deploy to production"

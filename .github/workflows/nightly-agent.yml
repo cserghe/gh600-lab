@@ -1,0 +1,86 @@
+name: Nightly agent fix                      # name shown in the Actions tab
+
+on:                                          # WHEN the workflow runs
+  schedule:
+    - cron: "0 2 * * *"                      # every day at 02:00 UTC (minute hour day month weekday)
+  workflow_dispatch:                         # plus a manual "Run workflow" button for testing
+
+permissions:                                 # default for ALL jobs: the automatic GITHUB_TOKEN can only read
+  contents: read
+
+concurrency:                                 # never two nightly runs at once
+  group: nightly-agent                       # runs sharing this name are serialised
+  cancel-in-progress: false                  # let a running fix finish; the new run waits
+
+jobs:
+  fix:                                       # job id (any name)
+    runs-on: ubuntu-latest                   # fresh Linux VM for every run
+    timeout-minutes: 30                      # hard stop: a looping agent can't burn hours
+    permissions:                             # this job gets a bit more than the default...
+      contents: read                         # ...still read-only: the push uses the App token below, not GITHUB_TOKEN
+      issues: write                          # ...so the escalation step can open an issue
+    steps:
+      - uses: actions/checkout@v4            # clone the repo onto the runner
+        with:
+          persist-credentials: false         # FIX vs workbook: otherwise checkout's saved GITHUB_TOKEN header
+                                             # overrides the App token in the push URL and the push is rejected
+
+      - uses: actions/setup-node@v4          # Node 22 is needed by the Copilot CLI
+        with:
+          node-version: "22"
+
+      - run: npm ci                          # install project dependencies
+
+      - run: npm install -g @github/copilot  # install the agent itself
+
+      - name: Create a branch for this run
+        run: git switch -c agent/nightly-${{ github.run_id }}   # branch-based scope: one unique branch per run
+
+      - name: Agent fixes failing tests
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_PAT }}   # token the CLI authenticates with (a stored secret)
+        run: |
+          copilot -p "Run npm test. Fix failing tests without changing test expectations. Summarise what you changed." \
+            --allow-tool 'read' --allow-tool 'write' \
+            --allow-tool 'shell(npm:*)' \
+            --deny-tool 'shell(git push)' \
+            --no-ask-user -s > agent-report.md
+        # the agent may edit and test, but cannot push: pushing happens in a step WE control
+
+      - name: Verify the fix
+        run: npm test                        # independent check: don't trust the agent's own "done"
+
+      - name: Keep the evidence
+        if: always()                         # run this step even if earlier steps failed
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-report-${{ github.run_id }}
+          path: agent-report.md
+          retention-days: 14                 # default would be 90
+
+      - name: Get a GitHub App token
+        id: app                              # id lets later steps read this step's outputs
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+
+      - name: Push branch and open a draft PR
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}   # App token, NOT GITHUB_TOKEN: so CI runs on this PR
+        run: |
+          git config user.name "nightly-agent[bot]"
+          git config user.email "nightly-agent@users.noreply.github.com"
+          git add -A
+          git commit -m "agent: nightly test fixes (run ${{ github.run_id }})"
+          git push -u "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}" HEAD
+          gh pr create --draft --fill --body-file agent-report.md   # draft = human must review before merge
+
+      - name: Escalate to a human
+        if: failure()                        # only when any step above failed
+        env:
+          GH_TOKEN: ${{ github.token }}      # GITHUB_TOKEN is fine here: an issue needn't trigger workflows
+        run: |
+          gh issue create --title "Nightly agent failed (run ${{ github.run_id }})" \
+            --body "See ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --label needs-human

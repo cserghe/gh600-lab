@@ -1,0 +1,23 @@
+# Normal tests on every PR (and on every push to main).
+# The job id "test" is the status check name you require in the protect-main ruleset (Lab 6).
+name: CI
+
+on:
+  pull_request:                        # every PR, including PRs opened by agents (if not opened with GITHUB_TOKEN)
+  push:
+    branches: [main]                   # and every push/merge to main
+
+permissions:
+  contents: read                       # least privilege: tests only need to read the repo
+
+jobs:
+  test:                                # job id = status check name "test"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm                   # reuse downloaded packages between runs
+      - run: npm ci && npm test        # clean install from the lockfile, then run Vitest

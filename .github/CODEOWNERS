@@ -1,0 +1,5 @@
+# Changes to CI config need YOUR review: they could disable other gates
+/.github/workflows/  @cserghe
+# Agent permissions are code: review like code
+/.github/agents/     @cserghe
+/.github/hooks/      @cserghe

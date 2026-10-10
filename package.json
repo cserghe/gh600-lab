@@ -1,0 +1,15 @@
+{
+  "name": "gh600-lab",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tiny TypeScript app for the GH-600 Copilot labs. Has one deliberate rounding bug.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
+}
